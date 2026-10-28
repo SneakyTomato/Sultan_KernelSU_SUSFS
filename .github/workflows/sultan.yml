@@ -241,15 +241,34 @@ jobs:
 
           sed -i '/echo "+"$/d' scripts/setlocalversion
 
-
       - name: Build the Kernel
+        shell: bash
         run: |
-          echo "Changing to configuration directory: $CONFIG..."
           cd "$CONFIG"
 
-          make CROSS_COMPILE=$GITHUB_WORKSPACE/gcc-14.2.0-nolibc/aarch64-linux/bin/aarch64-linux- CC=$GITHUB_WORKSPACE/gcc-14.2.0-nolibc/aarch64-linux/bin/aarch64-linux-gcc -j$(nproc --all) ${{ inputs.codename }}_defconfig
-          make CROSS_COMPILE=$GITHUB_WORKSPACE/gcc-14.2.0-nolibc/aarch64-linux/bin/aarch64-linux- CC=$GITHUB_WORKSPACE/gcc-14.2.0-nolibc/aarch64-linux/bin/aarch64-linux-gcc LOCALVERSION_AUTO=0 -j$(nproc --all)
+          toolchain="$GITHUB_WORKSPACE/gcc-14.2.0-nolibc/aarch64-linux/bin/aarch64-linux-"
 
+          make_args=(
+            ARCH=arm64
+            O=out
+            CROSS_COMPILE="$toolchain"
+            CC="${toolchain}gcc"
+          )
+
+          # Configure the selected device.
+          make "${make_args[@]}" -j"$(nproc)" \
+            "${{ inputs.codename }}_defconfig"
+
+          # Generate headers required by KernelSU-Next preinit.
+          make "${make_args[@]}" -j"$(nproc)" headers
+
+          # Stop immediately if the required header was not generated.
+          test -s out/usr/include/linux/unistd.h
+
+          # Compile the kernel with preinit available.
+          make "${make_args[@]}" LOCALVERSION_AUTO=0 \
+            -j"$(nproc)"
+      
       - name: Copy Images
         run: |
           echo "Changing to configuration directory: $CONFIG..."
