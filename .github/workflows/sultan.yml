@@ -119,6 +119,38 @@ jobs:
           
           patch -p1 < ../kernel_patches/sultan/sys.c_fix.patch
 
+      - name: Repair Sultan namespace SUSFS declarations
+        shell: bash
+        run: |
+          python3 - <<'PY'
+          import os
+          from pathlib import Path
+
+          p = Path(os.environ["CONFIG"]) / "fs/namespace.c"
+          text = p.read_text()
+          anchor = '#include "internal.h"\n'
+
+          if text.count(anchor) != 1:
+              raise SystemExit("Unexpected namespace.c layout")
+          if '#include <linux/susfs_def.h>' in text:
+              raise SystemExit("SUSFS declarations already present; review source")
+
+          block = """
+          #ifdef CONFIG_KSU_SUSFS
+          #include <linux/susfs_def.h>
+          #endif
+
+          #ifdef CONFIG_KSU_SUSFS_SUS_MOUNT
+          extern bool susfs_is_current_ksu_domain(void);
+          extern struct static_key_true susfs_is_sdcard_android_data_not_decrypted;
+          #define CL_COPY_MNT_NS BIT(25)
+          #endif
+          """
+
+          p.write_text(text.replace(anchor, anchor + block, 1))
+          print("Restored the declarations from the rejected namespace hunk")
+          PY
+
       - name: Configure KernelSU
         if: contains(matrix.features, 'ksun')
         run: |
